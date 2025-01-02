@@ -14,11 +14,13 @@ public:
 		_text = value->text();
 		_values.insert(std::end(_values), std::begin(value->values()), std::end(value->values()));
 	}
+
 	virtual void add(token* value)
 	{
-		if (value->may_be_value())
+		if (value->may_be_value() || value->is_sticky())
 			_values.push_back(value);
 	}
+
 	virtual std::list<token*>& values()
 	{
 		return _values;
@@ -35,6 +37,7 @@ public:
 	virtual bool may_be_name() { return false; }
 	virtual bool may_be_value() { return false; }
 	virtual bool is_text() { return false; }
+	virtual bool is_sticky() { return false; }
 
 protected:
 	std::string _text;

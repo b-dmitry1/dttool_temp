@@ -3823,10 +3823,10 @@
 		vin-supply = <0xf1>;
 	};
 
-	vcc5v0-host-20-regulator {
+	reg1: vcc5v0-host-20-regulator {
 		compatible = "regulator-fixed";
-		enable-active-high;
-		gpios = <0xee 0x0d 0x00>;
+		/delete-property/ enable-active-high;
+		gpios1: gpios = <0xee 0x0d 0x00>;
 		pinctrl-names = "default";
 		pinctrl-0 = <0xf2>;
 		regulator-name = "vcc5v0_host_20";

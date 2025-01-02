@@ -2,9 +2,12 @@
 #include <fstream>
 #include <string>
 #include <list>
-#include <vector>
+#include <chrono>
+#include <unordered_map>
 #include "char_pattern.h"
 #include "tokenizer.h"
+
+const bool print = true;
 
 // Шаблон для функций автоматического слияния 2 классов в новый
 template <typename A, typename B, typename C>
@@ -24,12 +27,50 @@ token* transform_left(token* a, token* b)
 	return res;
 };
 
+class recipe_book
+{
+public:
+	template <typename A, typename B, typename C>
+	void add_recipe()
+	{
+		_recipes[make_key(typeid(A).hash_code(), typeid(B).hash_code())] = &transform_left<A, B, C>;
+	}
+
+	void recipe_for(token* a, token* b, token* (*&result)(token*, token*))
+	{
+		result = _recipes[make_key(typeid(*a).hash_code(), typeid(*b).hash_code())];
+	}
+protected:
+	std::unordered_map<size_t, token* (*)(token*, token*)> _recipes;
+	size_t make_key(size_t a, size_t b) { return a ^ b; }
+};
+
+class forge
+{
+public:
+	static token* craft(recipe_book& book, token* a, token* b)
+	{
+		token* (*recipe)(token*, token*) = (token* (*)(token*, token*))NULL;
+		book.recipe_for(a, b, recipe);
+		if (recipe == NULL)
+			return NULL;
+		return recipe(a, b);
+	}
+};
 class token_identifier : public token
 {
 public:
 	virtual bool may_be_value() { return true; }
 };
-class token_attribute : public token {};
+class token_attribute : public token
+{
+public:
+	virtual void print()
+	{
+		std::cout << "/" << _text << "/ ";
+	}
+	virtual bool is_sticky() { return true; }
+};
 class token_attribute_finalized : public token
 {
 public:
@@ -72,7 +113,6 @@ public:
 class token_assignment : public token
 {
 };
-
 class token_assignment_finalized : public token
 {
 public:
@@ -99,7 +139,15 @@ public:
 		std::cout << ";" << std::endl;
 	}
 };
-
+class token_label : public token
+{
+public:
+	virtual void print()
+	{
+		std::cout << _text << ": ";
+	}
+	virtual bool is_sticky() { return true; }
+};
 class token_boolean : public token
 {
 public:
@@ -108,7 +156,6 @@ public:
 		std::cout << _text << ";" << std::endl;
 	}
 };
-
 class token_node_begin : public token
 {
 public:
@@ -127,10 +174,15 @@ public:
 };
 class token_alias : public token {};
 class token_name : public token {};
+class token_add : public token {};
+class token_sub : public token {};
+class token_mul : public token {};
+class token_div : public token {};
+class token_mod : public token {};
 
 int main()
 {
-	std::vector<token*> inventory;
+	std::list<token*> inventory;
 
 	// Загрузить файл в строку
 	std::fstream f("test0.dts");
@@ -142,7 +194,6 @@ int main()
 	tokenizer tzr(text);
 	tzr.use_backslashes(true);
 
-	tzr.add<token_identifier>("/({ )\b");
 	tzr.add<token_attribute>("/\b[a-zA-Z0-9_,-]/\b");
 	tzr.add<token_comment>("/*[]*\\/");
 	tzr.add<token_comment>("//[]\n");
@@ -163,24 +214,36 @@ int main()
 	tzr.add<token_openang>("<");
 	tzr.add<token_closeang>(">");
 	tzr.add<token_text>("\"[]\"");
+	tzr.add<token_add>("+");
+	tzr.add<token_sub>("-");
+	tzr.add<token_mul>("*");
+	tzr.add<token_div>("/");
+	tzr.add<token_mod>("%");
 
 	// Задать правила автоматических преобразований
-	std::list<token* (*)(token*, token*)> transforms;
-	transforms.push_back(&transform_left<token_identifier, token_equals, token_assignment>);
-	transforms.push_back(&transform_left<token_identifier, token_semicolon, token_boolean>);
-	transforms.push_back(&transform_left<token_assignment, token_openang, token_assignment>);
-	transforms.push_back(&transform_left<token_assignment, token_closeang, token_assignment>);
-	transforms.push_back(&transform_left<token_assignment, token_identifier, token_assignment>);
-	transforms.push_back(&transform_left<token_assignment, token_number, token_assignment>);
-	transforms.push_back(&transform_left<token_assignment, token_text, token_assignment>);
-	transforms.push_back(&transform_left<token_assignment, token_semicolon, token_assignment_finalized>);
-	transforms.push_back(&transform_left<token_assignment, token_comma, token_assignment>);
-	transforms.push_back(&transform_left<token_assignment, token_closecur, token_assignment>);
-	transforms.push_back(&transform_left<token_attribute, token_number, token_attribute>);
-	transforms.push_back(&transform_left<token_attribute, token_semicolon, token_attribute_finalized>);
-	transforms.push_back(&transform_left<token_identifier, token_opencur, token_node_begin>);
-	transforms.push_back(&transform_left<token_closecur, token_semicolon, token_node_end>);
+	recipe_book book;
+	book.add_recipe<token_identifier, token_equals, token_assignment>();
+	book.add_recipe<token_identifier, token_semicolon, token_boolean>();
+	book.add_recipe<token_identifier, token_colon, token_label>();
+	book.add_recipe<token_assignment, token_openang, token_assignment>();
+	book.add_recipe<token_assignment, token_closeang, token_assignment>();
+	book.add_recipe<token_assignment, token_identifier, token_assignment>();
+	book.add_recipe<token_assignment, token_number, token_assignment>();
+	book.add_recipe<token_assignment, token_text, token_assignment>();
+	book.add_recipe<token_assignment, token_semicolon, token_assignment_finalized>();
+	book.add_recipe<token_assignment, token_comma, token_assignment>();
+	book.add_recipe<token_assignment, token_closecur, token_assignment>();
+	book.add_recipe<token_assignment, token_attribute, token_assignment>();
+	book.add_recipe<token_attribute, token_number, token_attribute>();
+	book.add_recipe<token_attribute, token_semicolon, token_attribute_finalized>();
+	book.add_recipe<token_identifier, token_opencur, token_node_begin>();
+	book.add_recipe<token_div, token_opencur, token_node_begin>();
+	book.add_recipe<token_closecur, token_semicolon, token_node_end>();
 
+	// Начать измерение времени
+	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+
+	// Выполнить преобразования
 	token* first = NULL;
 	token* second = NULL;
 	token* result;
@@ -196,41 +259,50 @@ int main()
 		if (first == NULL)
 			continue;
 
-		result = NULL;
-		for (auto t : transforms)
-		{
-			result = t(first, second);
-			if (result == NULL)
-				continue;
-
-			second = result;
-			break;
-		}
-
+		result = forge::craft(book, first, second);
 		if (result == NULL)
 			inventory.push_back(first);
+		else
+			second = result;
 	}
 
-	auto tabs = 0;
-	for (auto it = std::begin(inventory); it != std::end(inventory); ++it)
+	// Закончить измерение времени
+	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+
+	// Напечатать результат
+	if (print)
 	{
-		auto node_begin = dynamic_cast<token_node_begin*>(*it);
-		auto node_end = dynamic_cast<token_node_end*>(*it);
+		auto tabs = 0;
+		auto sticky = false;
+		for (auto it = std::begin(inventory); it != std::end(inventory); ++it)
+		{
+			auto node_begin = dynamic_cast<token_node_begin*>(*it);
+			auto node_end = dynamic_cast<token_node_end*>(*it);
 
-		if (node_begin != NULL)
-			std::cout << std::endl;
+			if (!sticky)
+			{
+				if (node_begin != NULL)
+					std::cout << std::endl;
 
-		if (node_end != NULL)
-			tabs--;
+				if (node_end != NULL)
+					tabs--;
 
-		for (auto tab = 0; tab < tabs; tab++)
-			std::cout << "\t";
+				for (auto tab = 0; tab < tabs; tab++)
+					std::cout << "\t";
+			}
 
-		(*it)->print();
+			(*it)->print();
+			sticky = (*it)->is_sticky();
 
-		if (node_begin != NULL)
-			tabs++;
+			if (!sticky)
+			{
+				if (node_begin != NULL)
+					tabs++;
+			}
+		}
 	}
+
+	std::cout << "Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << " ms" << std::endl;
 
 	return 0;
 }
